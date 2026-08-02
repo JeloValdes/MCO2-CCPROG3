@@ -5,19 +5,10 @@ import model.VendingMachine;
 import view.MainFrame;
 import view.UI;
 
-/**
- * Entry point of the Vending Machine Factory simulator.
- *
- * <p>The driver does one job: it builds the window, builds the top-level
- * controller, and shows the result on the Swing event dispatch thread. It holds
- * no simulation logic, so the model, the view, and the controllers stay
- * independent of how the program happens to be started.</p>
- */
+/** Entry point of the Vending Machine Factory simulator. */
 public class Driver {
 
-    /**
-     * Prevents instantiation of this launcher class.
-     */
+    /** Prevents instantiation of this launcher class. */
     private Driver() {
     }
 
