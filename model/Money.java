@@ -1,3 +1,5 @@
+package model;
+
 /**
  * Represents a single denomination of money held by the vending machine.
  *

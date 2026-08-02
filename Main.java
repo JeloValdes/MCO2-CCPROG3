@@ -1,3 +1,5 @@
+import model.VendingMachine;
+
 import java.util.Scanner;
 
 /**

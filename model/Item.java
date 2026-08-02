@@ -1,3 +1,5 @@
+package model;
+
 /**
  * Represents a single item type stored in a slot of the vending machine.
  *
