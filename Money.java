@@ -6,34 +6,19 @@
  * denomination currently held by the machine.</p>
  */
 public class Money {
-    private int qty = 0;
+    private int qty;
     private int value;
 
     /**
-     * Creates a denomination with a given face value and quantity.
-     * @param qty   the initial quantity held (pre: qty &gt;= 0)
-     * @param value the face value of the denomination
-     */
-    public Money(int qty, int value) {
-        this.qty = qty;
-        this.value = value;
-    }
-
-    /**
-     * Creates a denomination with a given face value and a quantity of zero.
+     * Creates a denomination with a given face value.
      * @param value the face value of the denomination
      */
     public Money(int value) {
+        this.qty = 0;
         this.value = value;
     }
 
-    /**
-     * Sets the quantity of this denomination held by the machine.
-     * @param qty the new quantity (pre: qty &gt;= 0)
-     */
-    public void setQty(int qty) {
-        this.qty = qty;
-    }
+
 
     /**
      * Increases the quantity of this denomination by the given amount.
@@ -43,21 +28,17 @@ public class Money {
         this.qty += qty;
     }
 
-    /**
-     * Reduces the quantity of this denomination by the given amount.
-     * @param qty the number of pieces to remove (pre: qty &lt;= current quantity)
-     */
-    public void deductQty(int qty) {
-        this.qty -= qty;
+
+    public boolean removeQty(int amount) {
+        if (amount < 0 || amount > qty) {
+            return false;
+        }
+
+        qty -= amount;
+        return true;
     }
 
-    /**
-     * Sets the face value of this denomination.
-     * @param value the new face value
-     */
-    public void setValue(int value) {
-        this.value = value;
-    }
+
 
     /**
      * Returns the face value of this denomination.
