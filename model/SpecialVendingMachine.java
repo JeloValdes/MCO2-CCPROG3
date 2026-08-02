@@ -2,154 +2,390 @@ package model;
 
 import java.util.ArrayList;
 
+/**
+ * A vending machine that can also assemble a customizable ramen from the items
+ * it holds.
+ *
+ * <p>Alongside the stock of a regular machine, a special machine holds item
+ * types that exist only as components, such as broths and black garlic oil.
+ * Those are refused as individual purchases by the inherited
+ * {@link #purchaseItem(int, int[])}, which already checks each slot's
+ * {@code canSellIndividually} flag.</p>
+ *
+ * <p>Note that this class extends {@link VendingMachine} directly rather than
+ * extending {@link RegularVendingMachine}. A special machine is not a regular
+ * machine with extras bolted on; the two are siblings that share a common
+ * parent, and inheriting from the regular machine would mean inheriting a
+ * default stock that this class immediately throws away.</p>
+ */
+public class SpecialVendingMachine extends VendingMachine {
 
-public class SpecialVendingMachine extends RegularVendingMachine {
-    private String lastPreparation;
+    /** The name given to every bowl this machine assembles. */
+    public static final String PRODUCT_NAME = "Custom Ramen";
 
+    /**
+     * Extra calories the noodles absorb from any broth in the bowl, as a
+     * fraction of the noodles' own calorie contribution.
+     */
+    private static final double BROTH_ABSORPTION_RATE = 0.10;
+
+    /**
+     * Extra calories contributed by a finishing oil coating every component,
+     * as a fraction of the running total.
+     */
+    private static final double ADD_ON_COATING_RATE = 0.05;
+
+    private ArrayList<String> lastPreparation;
+    private int ramenRevenue;
+    private int ramenCount;
+
+    /**
+     * Creates an empty special machine.
+     */
     public SpecialVendingMachine() {
         super();
-        lastPreparation = "";
+        this.lastPreparation = new ArrayList<String>();
+        this.ramenRevenue = 0;
+        this.ramenCount = 0;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @return the string "Special Ramen Vending Machine"
+     */
     @Override
     public String getMachineName() {
         return "Special Ramen Vending Machine";
     }
 
-
+    /**
+     * {@inheritDoc}
+     *
+     * <p>The special machine stocks everything a regular machine does, plus the
+     * broths and the black garlic oil. Those exist only to be built into a bowl
+     * and are flagged so that they cannot be bought on their own.</p>
+     */
     @Override
     public void loadDefaultItems() {
-        slots.clear();
+        this.slots.clear();
 
-        addSlot("S01", "Noodles", 200, 25, true, "NOODLE", 10);
-        addSlot("S02", "Chashu Pork", 300, 45, true, "TOPPING", 8);
-        addSlot("S03", "Aji Tamago", 90, 15, true, "TOPPING", 10);
-        addSlot("S04", "Fried Tofu", 120, 20, true, "TOPPING", 9);
-        addSlot("S05", "Fish Cake", 80, 15, true, "TOPPING", 8);
-        addSlot("S06", "Negi", 10, 5, false, "TOPPING", 10);
-        addSlot("S07", "Tonkotsu Broth", 150, 35, false, "BROTH", 10);
-        addSlot("S08", "Miso Broth", 120, 30, false, "BROTH", 10);
-        addSlot("S09", "Black Garlic Oil", 40, 10, false, "ADD_ON", 10);
-        addSlot("S10", "Gyoza", 260, 50, true, "NONE", 6);
+        addSlot("S01", "Noodles",          200, 25, true,  IngredientType.NOODLE,  10);
+        addSlot("S02", "Chashu Pork",      300, 45, true,  IngredientType.TOPPING,  8);
+        addSlot("S03", "Aji Tamago",        90, 15, true,  IngredientType.TOPPING, 10);
+        addSlot("S04", "Fried Tofu",       120, 20, true,  IngredientType.TOPPING,  9);
+        addSlot("S05", "Fish Cake",         80, 15, true,  IngredientType.TOPPING,  8);
+        addSlot("S06", "Negi",              10,  5, true,  IngredientType.TOPPING, 10);
+        addSlot("S07", "Tonkotsu Broth",   150, 35, false, IngredientType.BROTH,   10);
+        addSlot("S08", "Miso Broth",       120, 30, false, IngredientType.BROTH,   10);
+        addSlot("S09", "Shio Broth",       110, 25, false, IngredientType.BROTH,   10);
+        addSlot("S10", "Black Garlic Oil",  40, 10, false, IngredientType.ADD_ON,  10);
+        addSlot("S11", "Gyoza",            260, 50, true,  IngredientType.NONE,     6);
+        addSlot("S12", "Onigiri",          180, 35, true,  IngredientType.NONE,     7);
+        addSlot("S13", "Green Tea",          5, 25, true,  IngredientType.NONE,     9);
 
         resetTransactionSummary();
     }
 
-    public String getLastPreparation() {
-        return lastPreparation;
-    }
-
     /**
-     * Creates one custom ramen.
-     * slotNumbers and quantities must have matching indexes.
-     * Example: {1,2,7} and {1,2,1} means
-     * 1 Noodles, 2 Chashu, 1 Tonkotsu Broth.
+     * Assembles and sells one custom ramen.
+     *
+     * <p>The whole order is validated before a single unit is removed, so an
+     * order that fails halfway leaves the machine untouched. A bowl must
+     * contain at least one noodle slot and at least one broth slot; toppings
+     * and add-ons are optional.</p>
+     *
+     * @param slotNumbers  the one-based slots chosen, matching {@code quantities}
+     * @param quantities   the orders of each chosen slot (pre: each &gt; 0)
+     * @param insertedCash the pieces inserted, indexed like {@link #DENOMINATIONS}
+     * @return true if the ramen was assembled and dispensed; call
+     *         {@link #getLastStatus()} for the reason when it was not
      */
-    public boolean prepareRamen(int[] slotNumbers, int[] quantities,
-                                int[] insertedCash) {
+    public boolean prepareRamen(int[] slotNumbers, int[] quantities, int[] insertedCash) {
         clearLastTransaction();
-        lastPreparation = "";
+        this.lastPreparation = new ArrayList<String>();
+        this.lastItemName = PRODUCT_NAME;
 
         if (slotNumbers == null || quantities == null
                 || slotNumbers.length != quantities.length
                 || slotNumbers.length == 0) {
-            lastMessage = "Invalid ramen order.";
+            this.lastStatus = PurchaseStatus.INVALID_ORDER;
             return false;
         }
 
         boolean hasNoodles = false;
         boolean hasBroth = false;
         int totalPrice = 0;
-        int totalCalories = 0;
 
-        // validate the whole order before removing anything.
+        // First pass: check the whole order before consuming anything.
         for (int i = 0; i < slotNumbers.length; i++) {
             ItemSlot slot = getSlot(slotNumbers[i]);
-            int quantity = quantities[i];
 
-            if (slot == null || quantity <= 0) {
-                lastMessage = "Invalid ingredient selection.";
+            if (slot == null || quantities[i] <= 0) {
+                this.lastStatus = PurchaseStatus.INVALID_ORDER;
                 return false;
             }
-            if (slot.getIngredientType().equals("NONE")) {
-                lastMessage = slot.getItemName()
-                        + " is not a ramen ingredient.";
+            if (!slot.getIngredientType().isRamenIngredient()) {
+                this.lastStatus = PurchaseStatus.NOT_A_RAMEN_INGREDIENT;
+                this.lastItemName = slot.getItemName();
                 return false;
             }
-            if (slot.getQuantity() < quantity) {
-                lastMessage = "Not enough stock for " + slot.getItemName() + ".";
+            if (slot.getQuantity() < quantities[i]) {
+                this.lastStatus = PurchaseStatus.OUT_OF_STOCK;
+                this.lastItemName = slot.getItemName();
                 return false;
             }
 
-            if (slot.getIngredientType().equals("NOODLE")) {
+            if (slot.getIngredientType() == IngredientType.NOODLE) {
                 hasNoodles = true;
             }
-            if (slot.getIngredientType().equals("BROTH")) {
+            if (slot.getIngredientType() == IngredientType.BROTH) {
                 hasBroth = true;
             }
-
-            totalPrice += slot.getPrice() * quantity;
-            totalCalories += slot.getCalories() * quantity;
+            totalPrice += slot.getPrice() * quantities[i];
         }
 
         if (!hasNoodles || !hasBroth) {
-            lastMessage = "A ramen must have noodles and broth.";
+            this.lastStatus = PurchaseStatus.MISSING_NOODLES_OR_BROTH;
+            this.lastItemName = PRODUCT_NAME;
             return false;
         }
 
-        int insertedTotal = getCashTotal(insertedCash);
-        if (insertedTotal < totalPrice) {
-            lastMessage = "Not enough money inserted.";
+        int paid = getCashTotal(insertedCash);
+        this.lastPrice = totalPrice;
+        this.lastPaid = paid;
+
+        if (paid < totalPrice) {
+            this.lastStatus = PurchaseStatus.INSUFFICIENT_PAYMENT;
             return false;
         }
 
-        int changeAmount = insertedTotal - totalPrice;
-        int[] changePlan = makeChangePlan(changeAmount);
+        int[] changePlan = makeChangePlan(paid - totalPrice, insertedCash);
         if (changePlan == null) {
-            lastMessage = "The machine cannot produce exact change.";
+            this.lastStatus = PurchaseStatus.NO_EXACT_CHANGE;
             return false;
         }
 
-        ArrayList<Item> usedIngredients = new ArrayList<Item>();
+        int totalCalories = computeRamenCalories(slotNumbers, quantities);
+        this.lastPreparation = buildPreparationSteps(slotNumbers, quantities);
 
-        // Second: consume the actual Item objects.
+        // Second pass: the order is certain to succeed, so consume the units.
         for (int i = 0; i < slotNumbers.length; i++) {
-            ItemSlot slot = getSlot(slotNumbers[i]);
-
-            for (int j = 0; j < quantities[i]; j++) {
-                Item item = slot.dispense();
-                usedIngredients.add(item);
-            }
+            getSlot(slotNumbers[i]).consume(quantities[i]);
         }
 
         addInsertedCash(insertedCash);
         removeChange(changePlan);
 
-        lastPrice = totalPrice;
-        lastCalories = totalCalories;
-        lastChange = changePlan;
-        lastMessage = "Custom ramen completed.";
-        lastPreparation = buildPreparationText(slotNumbers, quantities);
+        this.ramenRevenue += totalPrice;
+        this.ramenCount++;
+
+        this.lastChange = changePlan;
+        this.lastCalories = totalCalories;
+        this.lastStatus = PurchaseStatus.SUCCESS;
         return true;
     }
 
-    private String buildPreparationText(int[] slotNumbers, int[] quantities) {
-        String text = "Blanching noodles...\n";
-        text += "Heating broth...\n";
-        text += "Placing noodles in cup...\n";
+    /**
+     * Works out the calorie count of a bowl.
+     *
+     * <p>The count is deliberately more than a plain sum. Noodles soak up fat
+     * from whatever broth is in the bowl, so they contribute extra calories
+     * once a broth is present; and a finishing oil coats every component
+     * rather than sitting on one, so it raises the whole total rather than
+     * adding a fixed amount. The rule is driven by {@link IngredientType}, so
+     * adding a fourth broth needs no change here.</p>
+     *
+     * @param slotNumbers the one-based slots chosen
+     * @param quantities  the orders of each chosen slot
+     * @return the combined calorie count, rounded to the nearest calorie
+     */
+    public int computeRamenCalories(int[] slotNumbers, int[] quantities) {
+        int rawTotal = 0;
+        int noodleCalories = 0;
+        boolean hasBroth = false;
+        boolean hasAddOn = false;
 
         for (int i = 0; i < slotNumbers.length; i++) {
             ItemSlot slot = getSlot(slotNumbers[i]);
-            String type = slot.getIngredientType();
+            if (slot == null) {
+                continue;
+            }
 
-            if (type.equals("TOPPING") || type.equals("ADD_ON")) {
-                text += "Adding " + quantities[i] + " "
-                        + slot.getItemName() + "...\n";
+            int contribution = slot.getCalories() * quantities[i];
+            rawTotal += contribution;
+
+            if (slot.getIngredientType() == IngredientType.NOODLE) {
+                noodleCalories += contribution;
+            } else if (slot.getIngredientType() == IngredientType.BROTH) {
+                hasBroth = true;
+            } else if (slot.getIngredientType() == IngredientType.ADD_ON) {
+                hasAddOn = true;
             }
         }
 
-        text += "Pouring broth...\n";
-        text += "Ramen Done!";
-        return text;
+        double total = rawTotal;
+        if (hasBroth) {
+            total += BROTH_ABSORPTION_RATE * noodleCalories;
+        }
+        if (hasAddOn) {
+            total *= (1.0 + ADD_ON_COATING_RATE);
+        }
+        return (int) Math.round(total);
+    }
+
+    /**
+     * Returns the running price of an order without buying it, so the view can
+     * show a total while the customer is still choosing.
+     *
+     * @param slotNumbers the one-based slots chosen
+     * @param quantities  the orders of each chosen slot
+     * @return the total price in pesos
+     */
+    public int computeRamenPrice(int[] slotNumbers, int[] quantities) {
+        int total = 0;
+        for (int i = 0; i < slotNumbers.length; i++) {
+            ItemSlot slot = getSlot(slotNumbers[i]);
+            if (slot != null) {
+                total += slot.getPrice() * quantities[i];
+            }
+        }
+        return total;
+    }
+
+    /**
+     * Describes, step by step, how the machine puts a bowl together.
+     *
+     * <p>The order follows each component's role rather than the order the
+     * customer happened to choose them, so the narration reads the way a bowl
+     * is actually built.</p>
+     *
+     * @param slotNumbers the one-based slots chosen
+     * @param quantities  the orders of each chosen slot
+     * @return the preparation steps, in order
+     */
+    private ArrayList<String> buildPreparationSteps(int[] slotNumbers, int[] quantities) {
+        ArrayList<String> steps = new ArrayList<String>();
+
+        String noodles = describeRole(slotNumbers, quantities, IngredientType.NOODLE);
+        String broths = describeRole(slotNumbers, quantities, IngredientType.BROTH);
+        String toppings = describeRole(slotNumbers, quantities, IngredientType.TOPPING);
+        String addOns = describeRole(slotNumbers, quantities, IngredientType.ADD_ON);
+
+        steps.add("Blanching " + noodles + "...");
+        steps.add("Heating " + broths + "...");
+        steps.add("Placing " + noodles + " in cup...");
+
+        if (!toppings.isEmpty()) {
+            steps.add("Topping with " + toppings + "...");
+        }
+        steps.add("Pouring " + broths + "...");
+
+        if (!addOns.isEmpty()) {
+            steps.add("Drizzling " + addOns + "...");
+        }
+        steps.add(PRODUCT_NAME + " done!");
+        return steps;
+    }
+
+    /**
+     * Joins the names of every component playing one role into a phrase.
+     *
+     * @param slotNumbers the one-based slots chosen
+     * @param quantities  the orders of each chosen slot
+     * @param role        the role to collect
+     * @return a phrase such as "noodles (x2) and chashu pork", or an empty
+     *         string when no component plays that role
+     */
+    private String describeRole(int[] slotNumbers, int[] quantities, IngredientType role) {
+        ArrayList<String> names = new ArrayList<String>();
+
+        for (int i = 0; i < slotNumbers.length; i++) {
+            ItemSlot slot = getSlot(slotNumbers[i]);
+            if (slot != null && slot.getIngredientType() == role) {
+                String name = slot.getItemName().toLowerCase();
+                if (quantities[i] > 1) {
+                    name += " (x" + quantities[i] + ")";
+                }
+                names.add(name);
+            }
+        }
+
+        String phrase = "";
+        for (int i = 0; i < names.size(); i++) {
+            if (i > 0) {
+                phrase += (i == names.size() - 1) ? " and " : ", ";
+            }
+            phrase += names.get(i);
+        }
+        return phrase;
+    }
+
+    /**
+     * Returns the narration of the most recent successful ramen.
+     *
+     * @return a copy of the preparation steps, empty if none has been made
+     */
+    public ArrayList<String> getLastPreparation() {
+        return new ArrayList<String>(this.lastPreparation);
+    }
+
+    /**
+     * Returns the slots holding items that may be built into a ramen.
+     *
+     * @return the usable component slots, in slot order
+     */
+    public ArrayList<ItemSlot> getIngredientSlots() {
+        ArrayList<ItemSlot> usable = new ArrayList<ItemSlot>();
+        for (int i = 0; i < this.slots.size(); i++) {
+            if (this.slots.get(i).getIngredientType().isRamenIngredient()) {
+                usable.add(this.slots.get(i));
+            }
+        }
+        return usable;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Extended so that money taken for assembled bowls is counted alongside
+     * money taken for individual items. The two never overlap, because units
+     * eaten by a bowl are recorded against a slot's ingredient counter rather
+     * than against its individual-sales revenue.</p>
+     */
+    @Override
+    public int getTotalSales() {
+        return super.getTotalSales() + this.ramenRevenue;
+    }
+
+    /**
+     * Returns the money taken for assembled bowls alone.
+     *
+     * @return the ramen revenue in pesos
+     */
+    public int getRamenRevenue() {
+        return this.ramenRevenue;
+    }
+
+    /**
+     * Returns how many bowls have been assembled since the last stocking.
+     *
+     * @return the ramen count
+     */
+    public int getRamenCount() {
+        return this.ramenCount;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Extended to clear the ramen figures as well, so a new summary period
+     * starts clean for both kinds of sale.</p>
+     */
+    @Override
+    public void resetTransactionSummary() {
+        super.resetTransactionSummary();
+        this.ramenRevenue = 0;
+        this.ramenCount = 0;
     }
 }
